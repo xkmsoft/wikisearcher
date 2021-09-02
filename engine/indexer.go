@@ -3,9 +3,9 @@ package engine
 import (
 	"bufio"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"github.com/RoaringBitmap/roaring"
+	"github.com/tamerh/xml-stream-parser"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -34,10 +34,10 @@ type SearchResults struct {
 }
 
 type WikiXMLDoc struct {
-	Index    uint32 `xml:"index"`
-	Title    string `xml:"title"`
-	Url      string `xml:"url"`
-	Abstract string `xml:"abstract"`
+	Index    uint32 `xml:"index" json:"index"`
+	Title    string `xml:"title" json:"title"`
+	Url      string `xml:"url" json:"url"`
+	Abstract string `xml:"abstract" json:"abstract"`
 }
 
 type WikiXMLDump struct {
@@ -107,29 +107,31 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 	}(xmlFile)
 
 	t2 := time.Now()
-	buffer := bufio.NewReaderSize(xmlFile, 1024*1024*2)
-	decoder := xml.NewDecoder(buffer)
+	buffer := bufio.NewReaderSize(xmlFile, 1024*1024*1)
+	parser := xmlparser.NewXMLParser(buffer, "doc")
+	documents := make([]WikiXMLDoc, 0)
+	index := uint32(0)
 
-	var dump WikiXMLDump
-
-	if err := decoder.Decode(&dump); err != nil {
-		return err
+	for xmlElement := range parser.Stream() {
+		if xmlElement.Name == "doc" {
+			doc := WikiXMLDoc{
+				Index:    index,
+				Title:    xmlElement.Childs["title"][0].InnerText,
+				Url:      xmlElement.Childs["url"][0].InnerText,
+				Abstract: xmlElement.Childs["abstract"][0].InnerText,
+			}
+			documents = append(documents, doc)
+			i.Data[index] = doc
+			index++
+		}
 	}
 	t3 := time.Since(t2).Seconds()
-	fmt.Printf("Decoding file took %f seconds\n", t3)
+	fmt.Printf("Parsing XML file took %f seconds\n", t3)
+
 	t4 := time.Now()
-
-	docs := dump.Documents
-	for idx, doc := range docs {
-		docs[idx].Index = uint32(idx)
-		i.Data[uint32(idx)] = doc
-	}
-	dump.Documents = docs
-
 	var chunks [][]WikiXMLDoc
 	var wg sync.WaitGroup
-
-	numberOfDocuments := len(dump.Documents)
+	numberOfDocuments := len(documents)
 	workers := i.Cores * i.Multiplier
 	runtime.GOMAXPROCS(workers)
 	chunkSize := (numberOfDocuments + workers - 1) / workers
@@ -139,7 +141,7 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 		if end > numberOfDocuments {
 			end = numberOfDocuments
 		}
-		chunks = append(chunks, dump.Documents[i:end])
+		chunks = append(chunks, documents[i:end])
 	}
 
 	for idx := range chunks {
@@ -148,8 +150,8 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 	}
 
 	wg.Wait()
-	t5 := time.Since(t4).Seconds()
 
+	t5 := time.Since(t4).Seconds()
 	fmt.Printf("Indexing documents took %f seconds\n", t5)
 
 	if save {
