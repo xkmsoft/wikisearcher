@@ -88,7 +88,7 @@ func (s *Server) InitializeServer() error {
 		}
 	} else {
 		fmt.Printf("Loading xml dump to index the data...\n")
-		err := s.Indexer.LoadWikimediaDump("./data/enwiki-latest-abstract1.xml", true)
+		err := s.Indexer.LoadWikimediaDump("./data/enwiki-latest-abstract.xml", true)
 		if err != nil {
 			return err
 		}
