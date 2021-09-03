@@ -68,7 +68,7 @@ func (s *Server) InitializeServer() error {
 	indexDump := filepath.Join(DataDirectory, IndexesDump)
 	dataDump := filepath.Join(DataDirectory, DataDump)
 
-	if s.Indexer.IsIndexesDumped(indexDump) && s.Indexer.IsDataDumped(dataDump) {
+	if s.Indexer.IsFileExists(indexDump) && s.Indexer.IsFileExists(dataDump) {
 		// Loading concurrently the index and data dump files
 		workers := 2
 		done := make(chan bool)

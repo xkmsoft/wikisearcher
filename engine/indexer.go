@@ -53,8 +53,7 @@ type IndexerInterface interface {
 	LoadDataDump(path string) error
 	SaveIndexDump(path string) error
 	SaveDataDump(path string) error
-	IsIndexesDumped(path string) bool
-	IsDataDumped(path string) bool
+	IsFileExists(path string) bool
 	Analyze(s string) []string
 	AddIndex(tokens []string, index uint32)
 	AddIndexesAsync(documents []WikiXMLDoc, wg *sync.WaitGroup)
@@ -251,14 +250,7 @@ func (i *Indexer) LoadDataDump(path string) error {
 	return nil
 }
 
-func (i *Indexer) IsIndexesDumped(path string) bool {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
-
-func (i *Indexer) IsDataDumped(path string) bool {
+func (i *Indexer) IsFileExists(path string) bool {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false
 	}
