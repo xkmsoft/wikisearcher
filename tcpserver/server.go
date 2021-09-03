@@ -3,9 +3,18 @@ package tcpserver
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 	"strings"
 	"time"
 	"wikisearcher/engine"
+)
+
+const (
+	DataDirectory = "data"
+	IndexesDump   = "indexes.json"
+	DataDump      = "data.json"
+	Abstract      = "enwiki-latest-abstract.xml"
+	Abstract1     = "enwiki-latest-abstract1.xml"
 )
 
 type ServerInterface interface {
@@ -55,21 +64,25 @@ func (s *Server) InitializeServer() error {
 		fmt.Printf("Initializing the server took %f seconds\n", time.Since(t0).Seconds())
 	}(t0)
 
-	if s.Indexer.IsIndexesDumped() && s.Indexer.IsDataDumped() {
+	abstract := filepath.Join(DataDirectory, Abstract)
+	indexDump := filepath.Join(DataDirectory, IndexesDump)
+	dataDump := filepath.Join(DataDirectory, DataDump)
+
+	if s.Indexer.IsIndexesDumped(indexDump) && s.Indexer.IsDataDumped(dataDump) {
 		// Loading concurrently the index and data dump files
 		workers := 2
 		done := make(chan bool)
 		errors := make(chan error)
 
 		go func() {
-			if err := s.Indexer.LoadIndexDump("./data/indexes.json"); err != nil {
+			if err := s.Indexer.LoadIndexDump(indexDump); err != nil {
 				errors <- err
 			}
 			done <- true
 		}()
 
 		go func() {
-			if err := s.Indexer.LoadDataDump("./data/data.json"); err != nil {
+			if err := s.Indexer.LoadDataDump(dataDump); err != nil {
 				errors <- err
 			}
 			done <- true
@@ -88,7 +101,7 @@ func (s *Server) InitializeServer() error {
 			}
 		}
 	} else {
-		if err := s.Indexer.LoadWikimediaDump("./data/enwiki-latest-abstract1.xml", true); err != nil {
+		if err := s.Indexer.LoadWikimediaDump(abstract, true, indexDump, dataDump); err != nil {
 			return err
 		}
 	}

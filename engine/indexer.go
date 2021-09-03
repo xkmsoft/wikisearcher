@@ -8,11 +8,17 @@ import (
 	"github.com/tamerh/xml-stream-parser"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"runtime"
 	"sync"
 	"time"
+)
+
+const (
+	XmlStreamBufferSize = 1024 * 1024 * 1 // 1MB
+	DocumentCapacity    = 524288 // 2^19
 )
 
 type Processed struct {
@@ -41,14 +47,14 @@ type WikiXMLDoc struct {
 }
 
 type IndexerInterface interface {
-	DownloadWikimediaDump() error
-	LoadWikimediaDump(path string, save bool) error
+	DownloadWikimediaDump(path string, url string) error
+	LoadWikimediaDump(path string, save bool, indexPath string, dataPath string) error
 	LoadIndexDump(path string) error
 	LoadDataDump(path string) error
-	SaveIndexDump() error
-	SaveDataDump() error
-	IsIndexesDumped() bool
-	IsDataDumped() bool
+	SaveIndexDump(path string) error
+	SaveDataDump(path string) error
+	IsIndexesDumped(path string) bool
+	IsDataDumped(path string) bool
 	Analyze(s string) []string
 	AddIndex(tokens []string, index uint32)
 	AddIndexesAsync(documents []WikiXMLDoc, wg *sync.WaitGroup)
@@ -83,7 +89,7 @@ func NewIndexer() (*Indexer, error) {
 	}, nil
 }
 
-func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
+func (i *Indexer) LoadWikimediaDump(path string, save bool, indexPath string, dataPath string) error {
 
 	t0 := time.Now()
 	defer func(t0 time.Time) {
@@ -102,9 +108,9 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 
 	// Phase 1: Parsing the XML file
 	t1 := time.Now()
-	buffer := bufio.NewReaderSize(f, 1024*1024*1)
+	buffer := bufio.NewReaderSize(f, XmlStreamBufferSize)
 	parser := xmlparser.NewXMLParser(buffer, "doc")
-	documents := make([]WikiXMLDoc, 0)
+	documents := make([]WikiXMLDoc, 0, DocumentCapacity)
 	index := uint32(0)
 
 	for xmlElement := range parser.Stream() {
@@ -148,13 +154,12 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 
 	if save {
 		// Phase 3: Saving concurrently the index and data dump into files
-		// TODO: Handle the memory leak caused saving index and data dumps into the files.
 		workers := 2
 		done := make(chan bool)
 		errors := make(chan error)
 
 		go func() {
-			if err := i.SaveIndexDump(); err != nil {
+			if err := i.SaveIndexDump(indexPath); err != nil {
 				errors <- err
 			} else {
 				done <- true
@@ -162,7 +167,7 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 		}()
 
 		go func() {
-			if err := i.SaveDataDump(); err != nil {
+			if err := i.SaveDataDump(dataPath); err != nil {
 				errors <- err
 			} else {
 				done <- true
@@ -246,21 +251,21 @@ func (i *Indexer) LoadDataDump(path string) error {
 	return nil
 }
 
-func (i *Indexer) IsIndexesDumped() bool {
-	if _, err := os.Stat("./data/indexes.json"); os.IsNotExist(err) {
+func (i *Indexer) IsIndexesDumped(path string) bool {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false
 	}
 	return true
 }
 
-func (i *Indexer) IsDataDumped() bool {
-	if _, err := os.Stat("./data/data.json"); os.IsNotExist(err) {
+func (i *Indexer) IsDataDumped(path string) bool {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false
 	}
 	return true
 }
 
-func (i *Indexer) SaveIndexDump() error {
+func (i *Indexer) SaveIndexDump(path string) error {
 	t0 := time.Now()
 	defer func(t0 time.Time) {
 		fmt.Printf("Saving indexes dump into the file took %f seconds\n", time.Since(t0).Seconds())
@@ -276,13 +281,13 @@ func (i *Indexer) SaveIndexDump() error {
 		return err
 	}
 
-	if err = ioutil.WriteFile("./data/indexes.json", bytes, 0644); err != nil {
+	if err = ioutil.WriteFile(path, bytes, 0644); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (i *Indexer) SaveDataDump() error {
+func (i *Indexer) SaveDataDump(path string) error {
 	t0 := time.Now()
 	defer func(t0 time.Time) {
 		fmt.Printf("Saving data dump into the file took %f seconds\n", time.Since(t0).Seconds())
@@ -293,7 +298,7 @@ func (i *Indexer) SaveDataDump() error {
 		return err
 	}
 
-	if err = ioutil.WriteFile("./data/data.json", bytes,0644); err != nil {
+	if err = ioutil.WriteFile(path, bytes,0644); err != nil {
 		return err
 	}
 	return nil
@@ -326,7 +331,7 @@ func (i *Indexer) AddIndex(tokens []string, index uint32) {
 func (i *Indexer) Search(s string) SearchResults {
 	t0 := time.Now()
 
-	searchResults := make([]SearchResult, 0)
+	searchResults := make([]SearchResult, 0, int(math.Pow(2, 8)))
 	rb := roaring.NewBitmap()
 	tokens := i.Analyze(s)
 
@@ -367,7 +372,7 @@ func (i *Indexer) Search(s string) SearchResults {
 	return SearchResults{
 		Processed: Processed{
 			Duration: duration,
-			Unit:     "milli seconds",
+			Unit:     "milliseconds",
 		},
 		NumberOfResults: len(searchResults),
 		Results:         searchResults,
@@ -383,20 +388,11 @@ func (i *Indexer) AddIndexesAsync(documents []WikiXMLDoc, wg *sync.WaitGroup) {
 	}
 }
 
-func (i *Indexer) DownloadWikimediaDump() error {
-
-	filePath := "./data/enwiki-latest-abstract1.xml.gz"
-	url := "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-abstract1.xml.gz"
-
-	f, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer func(f *os.File) {
-		if err := f.Close(); err != nil {
-			fmt.Printf("Error closing file: %s\n", err.Error())
-		}
-	}(f)
+func (i *Indexer) DownloadWikimediaDump(path string, url string) error {
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Downloading wikimedia dump on %s took %f seconds\n", url, time.Since(t0).Seconds())
+	}(t0)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -411,6 +407,16 @@ func (i *Indexer) DownloadWikimediaDump() error {
 	if resp.StatusCode != http.StatusOK {
 		return err
 	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer func(f *os.File) {
+		if err := f.Close(); err != nil {
+			fmt.Printf("Error closing file: %s\n", err.Error())
+		}
+	}(f)
 
 	if _, err = io.Copy(f, resp.Body); err != nil {
 		return err

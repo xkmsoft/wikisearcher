@@ -5,7 +5,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
+)
+
+const (
+	DataDirectory = "data"
+	StopWords     = "stop_words.json"
+	StopWordsSize = 100
 )
 
 type FilterInterface interface {
@@ -23,7 +30,7 @@ type Filterer struct {
 }
 
 func NewFilterer() (*Filterer, error) {
-	f, err := os.Open("./data/stop_words.json")
+	f, err := os.Open(filepath.Join(DataDirectory, StopWords))
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +45,7 @@ func NewFilterer() (*Filterer, error) {
 		return nil, err
 	}
 
-	var words = make([]StopWord, 0)
+	var words = make([]StopWord, 0, StopWordsSize)
 	var stopWords = make(map[string]int, 0)
 
 	if err = json.Unmarshal(bytes, &words); err != nil {
