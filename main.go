@@ -15,7 +15,7 @@ func main() {
 	flag.Parse()
 
 	if *index < 0 || *index > 27 {
-		log.Fatalf("Wrong index: %d Index should be [0, 27]", index)
+		log.Fatalf("Wrong index: %d Index should be [0, 27]", *index)
 	}
 
 	tcpServer, err := tcpserver.NewServer(*host, *port, *network, *index, *clean)
