@@ -23,42 +23,48 @@ type Filterer struct {
 }
 
 func NewFilterer() (*Filterer, error) {
-	jsonFile, err := os.Open("./data/stop_words.json")
+	f, err := os.Open("./data/stop_words.json")
 	if err != nil {
 		return nil, err
 	}
-	defer func(jsonFile *os.File) {
-		err := jsonFile.Close()
-		if err != nil {
+	defer func(f *os.File) {
+		if err := f.Close(); err != nil {
 			fmt.Printf("Error closing json file: %s\n", err.Error())
 		}
-	}(jsonFile)
+	}(f)
 
-	bytes, _ := ioutil.ReadAll(jsonFile)
-
-	var words = []StopWord{}
-	var stopWords = map[string]int{}
-
-	err = json.Unmarshal(bytes, &words)
+	bytes, err := ioutil.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
-	for _, w := range words {
+
+	var words = make([]StopWord, 0)
+	var stopWords = make(map[string]int, 0)
+
+	if err = json.Unmarshal(bytes, &words); err != nil {
+		return nil, err
+	}
+	for idx := range words {
+		w := words[idx]
 		stopWords[w.Word] = w.Rank
 	}
-	return &Filterer{ StopWords: stopWords}, nil
+	return &Filterer{
+		StopWords: stopWords,
+	}, nil
 }
 
 func (f *Filterer) Lowercase(tokens []string) []string {
-	for i, token := range tokens {
-		tokens[i] = strings.ToLower(token)
+	for idx := range tokens {
+		token := tokens[idx]
+		tokens[idx] = strings.ToLower(token)
 	}
 	return tokens
 }
 
 func (f *Filterer) RemoveStopWords(tokens []string) []string {
 	newTokens := make([]string, 0, len(tokens))
-	for _, token := range tokens {
+	for idx := range tokens {
+		token := tokens[idx]
 		if _, exist := f.StopWords[token]; !exist {
 			newTokens = append(newTokens, token)
 		}

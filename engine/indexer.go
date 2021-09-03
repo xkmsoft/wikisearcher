@@ -40,10 +40,6 @@ type WikiXMLDoc struct {
 	Abstract string `xml:"abstract" json:"abstract"`
 }
 
-type WikiXMLDump struct {
-	Documents []WikiXMLDoc `xml:"doc"`
-}
-
 type IndexerInterface interface {
 	DownloadWikimediaDump() error
 	LoadWikimediaDump(path string, save bool) error
@@ -89,25 +85,24 @@ func NewIndexer() (*Indexer, error) {
 
 func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 
-	begin := time.Now()
-	defer func(begin time.Time) {
-		elapsed := time.Since(begin)
-		fmt.Printf("Whole process took %f seconds\n", elapsed.Seconds())
-	}(begin)
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Whole process took %f seconds\n", time.Since(t0).Seconds())
+	}(t0)
 
-	xmlFile, err := os.Open(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer func(xmlFile *os.File) {
-		err := xmlFile.Close()
-		if err != nil {
+	defer func(f *os.File) {
+		if err := f.Close(); err != nil {
 			fmt.Printf("Closing xml file failed: %s\n", err.Error())
 		}
-	}(xmlFile)
+	}(f)
 
-	t2 := time.Now()
-	buffer := bufio.NewReaderSize(xmlFile, 1024*1024*1)
+	// Phase 1: Parsing the XML file
+	t1 := time.Now()
+	buffer := bufio.NewReaderSize(f, 1024*1024*1)
 	parser := xmlparser.NewXMLParser(buffer, "doc")
 	documents := make([]WikiXMLDoc, 0)
 	index := uint32(0)
@@ -125,12 +120,13 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 			index++
 		}
 	}
-	t3 := time.Since(t2).Seconds()
-	fmt.Printf("Parsing XML file took %f seconds\n", t3)
+	fmt.Printf("Parsing XML file took %f seconds\n", time.Since(t1).Seconds())
 
-	t4 := time.Now()
+	// Phase 2: Creating indexes concurrently
+	t2 := time.Now()
 	var chunks [][]WikiXMLDoc
 	var wg sync.WaitGroup
+
 	numberOfDocuments := len(documents)
 	workers := i.Cores * i.Multiplier
 	runtime.GOMAXPROCS(workers)
@@ -143,36 +139,36 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 		}
 		chunks = append(chunks, documents[i:end])
 	}
-
+	wg.Add(len(chunks))
 	for idx := range chunks {
-		wg.Add(1)
 		go i.AddIndexesAsync(chunks[idx], &wg)
 	}
-
 	wg.Wait()
-
-	t5 := time.Since(t4).Seconds()
-	fmt.Printf("Indexing documents took %f seconds\n", t5)
+	fmt.Printf("Indexing documents took %f seconds\n", time.Since(t2).Seconds())
 
 	if save {
-		// Saving concurrently the index and data dump into files
-		ops := 2
+		// Phase 3: Saving concurrently the index and data dump into files
+		// TODO: Handle the memory leak caused saving index and data dumps into the files.
+		workers := 2
 		done := make(chan bool)
 		errors := make(chan error)
+
 		go func() {
-			err := i.SaveIndexDump()
-			if err != nil {
+			if err := i.SaveIndexDump(); err != nil {
 				errors <- err
+			} else {
+				done <- true
 			}
-			done <- true
 		}()
+
 		go func() {
-			err := i.SaveDataDump()
-			if err != nil {
+			if err := i.SaveDataDump(); err != nil {
 				errors <- err
+			} else {
+				done <- true
 			}
-			done <- true
 		}()
+
 		count := 0
 		for {
 			select {
@@ -180,7 +176,7 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 				return err
 			case <-done:
 				count++
-				if count == ops {
+				if count == workers {
 					return nil
 				}
 			}
@@ -190,68 +186,63 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool) error {
 }
 
 func (i *Indexer) LoadIndexDump(path string) error {
-	fmt.Printf("Loading indexes dump from data...\n")
-	begin := time.Now()
-	defer func(begin time.Time) {
-		elapsed := time.Since(begin)
-		fmt.Printf("Loading indexes dump took %f seconds\n", elapsed.Seconds())
-	}(begin)
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Loading indexes dump took %f seconds\n", time.Since(t0).Seconds())
+	}(t0)
 
-	jsonFile, err := os.Open(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer func(jsonFile *os.File) {
-		err := jsonFile.Close()
-		if err != nil {
+	defer func(f *os.File) {
+		if err := f.Close(); err != nil {
 			fmt.Printf("Error closing json file: %s\n", err.Error())
 		}
-	}(jsonFile)
+	}(f)
 
-	bytes, _ := ioutil.ReadAll(jsonFile)
-
-	var indexes map[string][]uint32
-
-	err = json.Unmarshal(bytes, &indexes)
+	bytes, err := ioutil.ReadAll(f)
 	if err != nil {
 		return err
 	}
+
+	var indexes map[string][]uint32
+	if err = json.Unmarshal(bytes, &indexes); err != nil {
+		return err
+	}
+
 	for token, idx := range indexes {
 		i.Indexes[token] = roaring.BitmapOf(idx...)
 	}
-	fmt.Printf("Indexes loaded from the dump successfully\n")
 	return nil
 }
 
 func (i *Indexer) LoadDataDump(path string) error {
-	fmt.Printf("Loading data dump from data...\n")
-	begin := time.Now()
-	defer func(begin time.Time) {
-		elapsed := time.Since(begin)
-		fmt.Printf("Loading data dump took %f seconds\n", elapsed.Seconds())
-	}(begin)
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Loading data dump took %f seconds\n", time.Since(t0).Seconds())
+	}(t0)
 
-	jsonFile, err := os.Open(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer func(jsonFile *os.File) {
-		err := jsonFile.Close()
-		if err != nil {
+	defer func(f *os.File) {
+		if err := f.Close(); err != nil {
 			fmt.Printf("Error closing json file: %s\n", err.Error())
 		}
-	}(jsonFile)
+	}(f)
 
-	bytes, _ := ioutil.ReadAll(jsonFile)
+	bytes, err := ioutil.ReadAll(f)
+	if err != nil {
+		return err
+	}
 
 	var data map[uint32]WikiXMLDoc
-
-	err = json.Unmarshal(bytes, &data)
-	if err != nil {
+	if err = json.Unmarshal(bytes, &data); err != nil {
 		return err
 	}
 	i.Data = data
-	fmt.Printf("Data dump loaded from the dump file successfully\n")
 	return nil
 }
 
@@ -270,47 +261,41 @@ func (i *Indexer) IsDataDumped() bool {
 }
 
 func (i *Indexer) SaveIndexDump() error {
-	begin := time.Now()
-	defer func(begin time.Time) {
-		elapsed := time.Since(begin)
-		fmt.Printf("Saving indexes dump into the file took %f seconds\n", elapsed.Seconds())
-	}(begin)
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Saving indexes dump into the file took %f seconds\n", time.Since(t0).Seconds())
+	}(t0)
 
-	indexes := map[string][]uint32{}
+	indexes := make(map[string][]uint32, 0)
 	for token, idx := range i.Indexes {
 		indexes[token] = idx.ToArray()
 	}
-	file, err := json.Marshal(indexes)
+
+	bytes, err := json.Marshal(&indexes)
 	if err != nil {
-		fmt.Printf("Error marshalling to json the results: %s\n", err.Error())
 		return err
 	}
-	err = ioutil.WriteFile("./data/indexes.json", file, 0644)
-	if err != nil {
-		fmt.Printf("Error saving the indexes dump into the file: %s\n", err.Error())
+
+	if err = ioutil.WriteFile("./data/indexes.json", bytes, 0644); err != nil {
 		return err
 	}
-	fmt.Printf("Indexes dump saved successfully into the file\n")
 	return nil
 }
 
 func (i *Indexer) SaveDataDump() error {
-	begin := time.Now()
-	defer func(begin time.Time) {
-		elapsed := time.Since(begin)
-		fmt.Printf("Saving data dump into the file took %f seconds\n", elapsed.Seconds())
-	}(begin)
-	file, err := json.Marshal(i.Data)
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Saving data dump into the file took %f seconds\n", time.Since(t0).Seconds())
+	}(t0)
+
+	bytes, err := json.Marshal(&i.Data)
 	if err != nil {
-		fmt.Printf("Error marshalling to json the data: %s\n", err.Error())
 		return err
 	}
-	err = ioutil.WriteFile("./data/data.json", file, 0644)
-	if err != nil {
-		fmt.Printf("Error saving the data dump into the file: %s\n", err.Error())
+
+	if err = ioutil.WriteFile("./data/data.json", bytes,0644); err != nil {
 		return err
 	}
-	fmt.Printf("Data dump saved successfully into the file\n")
 	return nil
 }
 
@@ -326,8 +311,7 @@ func (i *Indexer) AddIndex(tokens []string, index uint32) {
 	for idx := range tokens {
 		token := tokens[idx]
 		i.Mutex.Lock()
-		indexes, exists := i.Indexes[token]
-		if exists {
+		if indexes, exists := i.Indexes[token]; exists {
 			if !indexes.Contains(index) {
 				indexes.Add(index)
 				i.Indexes[token] = indexes
@@ -340,23 +324,24 @@ func (i *Indexer) AddIndex(tokens []string, index uint32) {
 }
 
 func (i *Indexer) Search(s string) SearchResults {
-	begin := time.Now()
+	t0 := time.Now()
+
 	searchResults := make([]SearchResult, 0)
-	bitmapResults := roaring.BitmapOf()
+	rb := roaring.NewBitmap()
 	tokens := i.Analyze(s)
 
 	for idx := range tokens {
 		token := tokens[idx]
 		if indexes, exists := i.Indexes[token]; exists {
-			if bitmapResults.IsEmpty() {
-				bitmapResults = indexes.Clone()
+			if rb.IsEmpty() {
+				rb = indexes.Clone()
 			}
 			// Parallel ANDing to find the intersection
-			bitmapResults = roaring.ParAnd(i.Cores, bitmapResults, indexes)
+			rb = roaring.ParAnd(i.Cores, rb, indexes)
 		}
 	}
 
-	for _, index := range bitmapResults.ToArray() {
+	for _, index := range rb.ToArray() {
 		if doc, ok := i.Data[index]; ok {
 			searchResults = append(searchResults, SearchResult{
 				Url:      doc.Url,
@@ -367,18 +352,18 @@ func (i *Indexer) Search(s string) SearchResults {
 		}
 	}
 
-	elapsed := time.Since(begin)
+	var duration float64
+	elapsed := time.Since(t0)
 	microseconds := elapsed.Microseconds()
 	milliseconds := elapsed.Milliseconds()
 
-	var duration float64
 	if microseconds > 1000 {
 		duration = float64(milliseconds)
 	} else {
 		duration = float64(microseconds) / 1000.0
 	}
 
-	fmt.Printf("Search took %f milli seconds for phrase: %s Number of results: %d\n", duration, s, len(searchResults))
+	fmt.Printf("%d results returned in %f milliseconds for phrase: %s\n", len(searchResults), duration, s)
 	return SearchResults{
 		Processed: Processed{
 			Duration: duration,
@@ -403,24 +388,22 @@ func (i *Indexer) DownloadWikimediaDump() error {
 	filePath := "./data/enwiki-latest-abstract1.xml.gz"
 	url := "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-abstract1.xml.gz"
 
-	out, err := os.Create(filePath)
+	f, err := os.Create(filePath)
 	if err != nil {
 		return err
 	}
-	defer func(out *os.File) {
-		err := out.Close()
-		if err != nil {
+	defer func(f *os.File) {
+		if err := f.Close(); err != nil {
 			fmt.Printf("Error closing file: %s\n", err.Error())
 		}
-	}(out)
+	}(f)
 
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
+	defer func(b io.ReadCloser) {
+		if err := b.Close(); err != nil {
 			fmt.Printf("Error closng get body %s\n", err.Error())
 		}
 	}(resp.Body)
@@ -429,10 +412,8 @@ func (i *Indexer) DownloadWikimediaDump() error {
 		return err
 	}
 
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
+	if _, err = io.Copy(f, resp.Body); err != nil {
 		return err
 	}
-
 	return nil
 }

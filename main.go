@@ -20,12 +20,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = tcpServer.InitializeServer()
-	if err != nil {
+
+	if err = tcpServer.InitializeServer(); err != nil {
 		log.Fatal(err)
 	}
-	err = tcpServer.AcceptConnections()
-	if err != nil {
+
+	if err = tcpServer.AcceptConnections(); err != nil {
 		log.Fatal(err)
 	}
 }

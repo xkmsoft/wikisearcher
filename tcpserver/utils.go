@@ -6,9 +6,9 @@ import (
 )
 
 func SearchResultsToJSONString(results engine.SearchResults) (string, error) {
-	b, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
+	if bytes, err := json.MarshalIndent(results, "", "  "); err != nil {
 		return "", err
+	} else {
+		return string(bytes), nil
 	}
-	return string(b), nil
 }

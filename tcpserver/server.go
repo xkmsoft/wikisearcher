@@ -48,32 +48,33 @@ func (s *Server) Signature() string {
 }
 
 func (s *Server) InitializeServer() error {
-	begin := time.Now()
-	defer func(begin time.Time) {
-		elapsed := time.Since(begin)
-		fmt.Printf("Initializing the server took %f seconds\n", elapsed.Seconds())
-	}(begin)
-
 	fmt.Printf("Initializing the full text search engine and the tcpserver on %s\n", s.Signature())
+
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Initializing the server took %f seconds\n", time.Since(t0).Seconds())
+	}(t0)
+
 	if s.Indexer.IsIndexesDumped() && s.Indexer.IsDataDumped() {
 		// Loading concurrently the index and data dump files
-		ops := 2
+		workers := 2
 		done := make(chan bool)
 		errors := make(chan error)
+
 		go func() {
-			err := s.Indexer.LoadIndexDump("./data/indexes.json")
-			if err != nil {
+			if err := s.Indexer.LoadIndexDump("./data/indexes.json"); err != nil {
 				errors <- err
 			}
 			done <- true
 		}()
+
 		go func() {
-			err := s.Indexer.LoadDataDump("./data/data.json")
-			if err != nil {
+			if err := s.Indexer.LoadDataDump("./data/data.json"); err != nil {
 				errors <- err
 			}
 			done <- true
 		}()
+
 		count := 0
 		for {
 			select {
@@ -81,18 +82,15 @@ func (s *Server) InitializeServer() error {
 				return err
 			case <-done:
 				count++
-				if count == ops {
+				if count == workers {
 					return nil
 				}
 			}
 		}
 	} else {
-		fmt.Printf("Loading xml dump to index the data...\n")
-		err := s.Indexer.LoadWikimediaDump("./data/enwiki-latest-abstract.xml", true)
-		if err != nil {
+		if err := s.Indexer.LoadWikimediaDump("./data/enwiki-latest-abstract1.xml", true); err != nil {
 			return err
 		}
-		fmt.Printf("Indexes have been created from the xml file successully\n")
 	}
 	return nil
 }
@@ -128,14 +126,13 @@ func (s *Server) HandleRequest(connection net.Conn)  {
 }
 
 func (s *Server) HandleResponse(response string, connection net.Conn) {
-	defer func(connection net.Conn) {
-		err := connection.Close()
-		if err != nil {
+	defer func(c net.Conn) {
+		if err := c.Close(); err != nil {
 			fmt.Printf("Error closing connection: %s\n", err.Error())
 		}
 	}(connection)
-	_, err := connection.Write([]byte(response + "\n"))
-	if err != nil {
+
+	if _, err := connection.Write([]byte(response + "\n")); err != nil {
 		fmt.Printf("Error writing to the connection: %s\n", err.Error())
 	}
 }
@@ -145,9 +142,8 @@ func (s *Server) AcceptConnections() error {
 	if err != nil {
 		return err
 	}
-	defer func(listener net.Listener) {
-		err := listener.Close()
-		if err != nil {
+	defer func(l net.Listener) {
+		if err := l.Close(); err != nil {
 			fmt.Printf("Error closing listener: %s\n", err.Error())
 		}
 	}(listener)
@@ -155,13 +151,12 @@ func (s *Server) AcceptConnections() error {
 	fmt.Printf("Accepting connections on %s\n", s.Signature())
 
 	for !s.QuitSignal {
-		connection, err := listener.Accept()
-		if err != nil {
+		if con, err := listener.Accept(); err != nil {
 			fmt.Printf("Error accepting connection: %s\n", err.Error())
+		} else {
+			go s.HandleRequest(con)
 		}
-		go s.HandleRequest(connection)
 	}
-
 	fmt.Printf("Server closed on %s\n", s.Signature())
 	return nil
 }
