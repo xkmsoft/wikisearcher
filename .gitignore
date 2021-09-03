@@ -159,11 +159,7 @@ Temporary Items
 .apdisk
 
 .idea/
-backup/
-/data/data.json
-/data/indexes.json
-/data/enwiki-latest-abstract1.xml
-/data/enwiki-latest-abstract.xml
+/data/
 
 
 

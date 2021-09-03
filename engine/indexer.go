@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"github.com/RoaringBitmap/roaring"
@@ -11,14 +12,16 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
 	XmlStreamBufferSize = 1024 * 1024 * 1 // 1MB
-	DocumentCapacity    = 524288 // 2^19
+	DocumentCapacity    = 524288          // 2^19
 )
 
 type Processed struct {
@@ -48,6 +51,7 @@ type WikiXMLDoc struct {
 
 type IndexerInterface interface {
 	DownloadWikimediaDump(path string, url string) error
+	UncompressWikimediaDump(path string) error
 	LoadWikimediaDump(path string, save bool, indexPath string, dataPath string) error
 	LoadIndexDump(path string) error
 	LoadDataDump(path string) error
@@ -133,6 +137,8 @@ func (i *Indexer) LoadWikimediaDump(path string, save bool, indexPath string, da
 	var wg sync.WaitGroup
 
 	numberOfDocuments := len(documents)
+	fmt.Printf("There are %d documents in the file %s\n", numberOfDocuments, path)
+
 	workers := i.Cores * i.Multiplier
 	runtime.GOMAXPROCS(workers)
 	chunkSize := (numberOfDocuments + workers - 1) / workers
@@ -290,7 +296,7 @@ func (i *Indexer) SaveDataDump(path string) error {
 		return err
 	}
 
-	if err = ioutil.WriteFile(path, bytes,0644); err != nil {
+	if err = ioutil.WriteFile(path, bytes, 0644); err != nil {
 		return err
 	}
 	return nil
@@ -386,6 +392,7 @@ func (i *Indexer) DownloadWikimediaDump(path string, url string) error {
 		fmt.Printf("Downloading wikimedia dump on %s took %f seconds\n", url, time.Since(t0).Seconds())
 	}(t0)
 
+	fmt.Printf("Downloading the file from %s\n", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
@@ -411,6 +418,45 @@ func (i *Indexer) DownloadWikimediaDump(path string, url string) error {
 	}(f)
 
 	if _, err = io.Copy(f, resp.Body); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *Indexer) UncompressWikimediaDump(path string) error {
+	t0 := time.Now()
+	defer func(t0 time.Time) {
+		fmt.Printf("Uncompressing the file took %f seconds\n", time.Since(t0).Seconds())
+	}(t0)
+
+	fmt.Printf("Uncompressing the file: %s\n", path)
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+
+	r, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer func(r *gzip.Reader) {
+		if err := r.Close(); err != nil {
+			fmt.Printf("Error closing reader: %s\n", err.Error())
+		}
+	}(r)
+	dir, file := filepath.Split(path)
+	out, err := os.Create(filepath.Join(dir, strings.TrimSuffix(file, ".gz")))
+	if err != nil {
+		return err
+	}
+	defer func(out *os.File) {
+		if err := out.Close(); err != nil {
+			fmt.Printf("Error closing file: %s\n", err.Error())
+		}
+	}(out)
+
+	if _, err = io.Copy(out, r); err != nil {
 		return err
 	}
 	return nil

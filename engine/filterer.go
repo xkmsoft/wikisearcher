@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DataDirectory = "data"
+	DataDirectory = "indexer"
 	StopWords     = "stop_words.json"
 	StopWordsSize = 100
 )

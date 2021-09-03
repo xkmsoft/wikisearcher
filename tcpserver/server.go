@@ -3,49 +3,114 @@ package tcpserver
 import (
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"wikisearcher/engine"
 )
 
 const (
-	DataDirectory = "data"
-	IndexesDump   = "indexes.json"
-	DataDump      = "data.json"
-	Abstract      = "enwiki-latest-abstract.xml"
-	Abstract1     = "enwiki-latest-abstract1.xml"
+	DataDirectory      = "data"
+	BaseIndexes        = "indexes%s.json"
+	BaseData           = "data%s.json"
+	BaseFile           = "enwiki-latest-abstract%s.%s"
+	BaseURL            = "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-abstract%s.xml.gz"
+	XMLExtension       = "xml"
+	GZExtension        = "xml.gz"
+	AbstractFilesCount = 28
 )
 
+
 type ServerInterface interface {
-	Address () string
+	Address() string
 	Signature() string
 	InitializeServer() error
 	HandleRequest(connection net.Conn)
 	HandleResponse(response string, connection net.Conn)
-	AcceptConnections () error
+	AcceptConnections() error
+	GetAbstractStruct() *AbstractStruct
+	InitializeDataDirectory() error
+}
+
+type AbstractStruct struct {
+	XMLFileName string
+	GZFileName  string
+	DataDump    string
+	IndexDump   string
+	URL         string
 }
 
 type Server struct {
-	Host           string
-	Port           string
-	Network        string
-	Indexer        *engine.Indexer
-	QuitSignal     bool
+	Host       string
+	Port       string
+	Network    string
+	Indexer    *engine.Indexer
+	QuitSignal bool
+	Abstracts  []*AbstractStruct
+	FileIndex  int
+	CleanFlag  bool
 }
 
-func NewServer(host string, port string, network string) (*Server, error) {
+func NewServer(host string, port string, network string, index int, clean bool) (*Server, error) {
 	db, err := engine.NewIndexer()
 	if err != nil {
 		return nil, err
 	}
+	abstracts := make([]*AbstractStruct, AbstractFilesCount)
+	for i := 0; i < AbstractFilesCount; i++ {
+		var index string
+		if i == 0 {
+			index = ""
+		} else {
+			index = strconv.Itoa(i)
+		}
+		abstracts[i] = &AbstractStruct{
+			XMLFileName: filepath.Join(DataDirectory, fmt.Sprintf(BaseFile, index, XMLExtension)),
+			GZFileName:  filepath.Join(DataDirectory, fmt.Sprintf(BaseFile, index, GZExtension)),
+			DataDump:    filepath.Join(DataDirectory, fmt.Sprintf(BaseData, index)),
+			IndexDump:   filepath.Join(DataDirectory, fmt.Sprintf(BaseIndexes, index)),
+			URL:         fmt.Sprintf(BaseURL, index),
+		}
+	}
 	return &Server{
-		Host:           host,
-		Port:           port,
-		Network:        network,
-		Indexer:        db,
-		QuitSignal:     false,
+		Host:       host,
+		Port:       port,
+		Network:    network,
+		Indexer:    db,
+		QuitSignal: false,
+		Abstracts:  abstracts,
+		FileIndex:  index,
+		CleanFlag:  clean,
 	}, nil
+}
+
+func (s *Server) InitializeDataDirectory() error {
+	if _, err := os.Stat(DataDirectory); os.IsNotExist(err) {
+		if err := os.Mkdir(DataDirectory, 0755); err != nil {
+			return err
+		}
+		return nil
+	}
+	if s.CleanFlag {
+		files, err := os.ReadDir(DataDirectory)
+		if err != nil {
+			return err
+		}
+		for _, f := range files {
+			if !f.IsDir() {
+				if err := os.Remove(filepath.Join(DataDirectory, f.Name())); err != nil {
+					fmt.Printf("File %s could not deleted: %s\n", f.Name(), err.Error())
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) GetAbstractStruct() *AbstractStruct {
+	return s.Abstracts[s.FileIndex]
 }
 
 func (s *Server) Address() string {
@@ -64,26 +129,28 @@ func (s *Server) InitializeServer() error {
 		fmt.Printf("Initializing the server took %f seconds\n", time.Since(t0).Seconds())
 	}(t0)
 
-	abstract := filepath.Join(DataDirectory, Abstract)
-	indexDump := filepath.Join(DataDirectory, IndexesDump)
-	dataDump := filepath.Join(DataDirectory, DataDump)
+	if err := s.InitializeDataDirectory(); err != nil {
+		return err
+	}
 
-	if s.Indexer.IsFileExists(indexDump) && s.Indexer.IsFileExists(dataDump) {
+	abstracts := s.GetAbstractStruct()
+
+	if s.Indexer.IsFileExists(abstracts.IndexDump) && s.Indexer.IsFileExists(abstracts.DataDump) {
 		// Loading concurrently the index and data dump files
 		workers := 2
 		done := make(chan bool)
-		errors := make(chan error)
+		errs := make(chan error)
 
 		go func() {
-			if err := s.Indexer.LoadIndexDump(indexDump); err != nil {
-				errors <- err
+			if err := s.Indexer.LoadIndexDump(abstracts.IndexDump); err != nil {
+				errs <- err
 			}
 			done <- true
 		}()
 
 		go func() {
-			if err := s.Indexer.LoadDataDump(dataDump); err != nil {
-				errors <- err
+			if err := s.Indexer.LoadDataDump(abstracts.DataDump); err != nil {
+				errs <- err
 			}
 			done <- true
 		}()
@@ -91,7 +158,7 @@ func (s *Server) InitializeServer() error {
 		count := 0
 		for {
 			select {
-			case err := <-errors:
+			case err := <-errs:
 				return err
 			case <-done:
 				count++
@@ -101,14 +168,32 @@ func (s *Server) InitializeServer() error {
 			}
 		}
 	} else {
-		if err := s.Indexer.LoadWikimediaDump(abstract, true, indexDump, dataDump); err != nil {
-			return err
+		if s.Indexer.IsFileExists(abstracts.XMLFileName) {
+			if err := s.Indexer.LoadWikimediaDump(abstracts.XMLFileName, true, abstracts.IndexDump, abstracts.DataDump); err != nil {
+				return err
+			}
+		} else {
+			// Wiki XML dump does not exists
+			if !s.Indexer.IsFileExists(abstracts.GZFileName) {
+				// Phase 1: Download from the server
+				if err := s.Indexer.DownloadWikimediaDump(abstracts.GZFileName, abstracts.URL); err != nil {
+					return err
+				}
+			}
+			// Phase 2: Uncompress the file
+			if err := s.Indexer.UncompressWikimediaDump(abstracts.GZFileName); err != nil {
+				return err
+			}
+			// Phase 3: Load file and create indexes
+			if err := s.Indexer.LoadWikimediaDump(abstracts.XMLFileName, true, abstracts.IndexDump, abstracts.DataDump); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (s *Server) HandleRequest(connection net.Conn)  {
+func (s *Server) HandleRequest(connection net.Conn) {
 	buffer := make([]byte, 1024)
 	length, err := connection.Read(buffer)
 	if err != nil {
