@@ -2,11 +2,11 @@ package tcpserver
 
 import (
 	"encoding/json"
-	"wikisearcher/engine"
+	"github.com/xkmsoft/wikisearcher/engine"
 )
 
 func SearchResultsToJSONString(results engine.SearchResults) (string, error) {
-	if bytes, err := json.MarshalIndent(results, "", "  "); err != nil {
+	if bytes, err := json.Marshal(results); err != nil {
 		return "", err
 	} else {
 		return string(bytes), nil

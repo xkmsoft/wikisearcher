@@ -1,4 +1,4 @@
-module wikisearcher
+module github.com/xkmsoft/wikisearcher
 
 go 1.17
 

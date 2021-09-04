@@ -2,13 +2,13 @@ package tcpserver
 
 import (
 	"fmt"
+	"github.com/xkmsoft/wikisearcher/engine"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-	"wikisearcher/engine"
 )
 
 const (
