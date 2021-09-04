@@ -10,7 +10,7 @@ import (
 )
 
 type ClientInterface interface {
-	Query(s string) (*engine.SearchResult, error)
+	Query(s string) (*engine.SearchResults, error)
 	PrepareQuery(s string) string
 	Address() string
 }
@@ -37,7 +37,7 @@ func (c *TCPClient) Address() string {
 	return fmt.Sprintf("%s:%s", c.Ip, c.Port)
 }
 
-func (c *TCPClient) Query(s string) (*engine.SearchResult, error) {
+func (c *TCPClient) Query(s string) (*engine.SearchResults, error) {
 
 	query := c.PrepareQuery(s)
 	address := c.Address()
@@ -66,7 +66,7 @@ func (c *TCPClient) Query(s string) (*engine.SearchResult, error) {
 	if _, err := io.Copy(&buffer, conn); err != nil {
 		return nil, err
 	}
-	var searchResults engine.SearchResult
+	var searchResults engine.SearchResults
 	if err = json.Unmarshal(buffer.Bytes(), &searchResults); err != nil {
 		return nil, err
 	}
