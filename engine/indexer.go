@@ -22,7 +22,7 @@ import (
 const (
 	XmlStreamBufferSize = 1024 * 1024 * 1 // 1MB
 	DocumentCapacity    = 524288          // 2^19
-	PageSize            = 100
+	PageSize            = 25
 )
 
 type Processed struct {
@@ -376,7 +376,7 @@ func (i *Indexer) Search(s string, page uint32) SearchResults {
 		duration = float64(microseconds) / 1000.0
 	}
 
-	fmt.Printf("%d results returned in %f milliseconds for phrase: %s\n", len(searchResults), duration, s)
+	fmt.Printf("%d results returned out of (%d documents) in %f milliseconds for phrase: %s\n", len(paginationResults), len(searchResults), duration, s)
 	return SearchResults{
 		Processed: Processed{
 			Duration: duration,

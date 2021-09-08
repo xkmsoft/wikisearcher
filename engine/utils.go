@@ -1,6 +1,8 @@
 package engine
 
-import "math"
+import (
+	"math"
+)
 
 func GetNumberOfPages(total int, pageSize int) int {
 	return int(math.Ceil(float64(total) / float64(pageSize)))
@@ -11,8 +13,8 @@ func SliceSearchResults(results []SearchResult, currentPage int) []SearchResult 
 	numberOfPages := GetNumberOfPages(total, PageSize)
 	low := (currentPage - 1) * PageSize
 	high := currentPage * PageSize
-	if currentPage > numberOfPages {
-		return results[low:]
+	if currentPage >= numberOfPages {
+		high = total
 	}
 	return results[low:high]
 }
