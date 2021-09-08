@@ -22,6 +22,7 @@ import (
 const (
 	XmlStreamBufferSize = 1024 * 1024 * 1 // 1MB
 	DocumentCapacity    = 524288          // 2^19
+	PageSize            = 100
 )
 
 type Processed struct {
@@ -39,6 +40,8 @@ type SearchResult struct {
 type SearchResults struct {
 	Processed       Processed      `json:"processed"`
 	NumberOfResults int            `json:"number_of_results"`
+	CurrentPage     int            `json:"current_page"`
+	NumberOfPages   int            `json:"number_of_pages"`
 	Results         []SearchResult `json:"results"`
 }
 
@@ -326,7 +329,7 @@ func (i *Indexer) AddIndex(tokens []string, index uint32) {
 	}
 }
 
-func (i *Indexer) Search(s string) SearchResults {
+func (i *Indexer) Search(s string, page uint32) SearchResults {
 	t0 := time.Now()
 
 	searchResults := make([]SearchResult, 0, int(math.Pow(2, 8)))
@@ -355,6 +358,13 @@ func (i *Indexer) Search(s string) SearchResults {
 		}
 	}
 
+	totalResults := len(searchResults)
+	numberOfPages := GetNumberOfPages(totalResults, PageSize)
+	paginationResults := SliceSearchResults(searchResults, int(page))
+	if int(page) > numberOfPages {
+		page = uint32(numberOfPages)
+	}
+
 	var duration float64
 	elapsed := time.Since(t0)
 	microseconds := elapsed.Microseconds()
@@ -373,7 +383,9 @@ func (i *Indexer) Search(s string) SearchResults {
 			Unit:     "milliseconds",
 		},
 		NumberOfResults: len(searchResults),
-		Results:         searchResults,
+		Results:         paginationResults,
+		CurrentPage:     int(page),
+		NumberOfPages:   numberOfPages,
 	}
 }
 

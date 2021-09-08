@@ -1,6 +1,7 @@
 package tcpserver
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"github.com/xkmsoft/wikisearcher/engine"
 )
@@ -11,4 +12,8 @@ func SearchResultsToJSONString(results engine.SearchResults) (string, error) {
 	} else {
 		return string(bytes), nil
 	}
+}
+
+func BytesToUint32(bytes []byte) uint32 {
+	return binary.BigEndian.Uint32(bytes)
 }

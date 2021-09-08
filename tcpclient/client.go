@@ -9,9 +9,13 @@ import (
 	"net"
 )
 
+const (
+	QUERY = byte(0)
+)
+
 type ClientInterface interface {
 	Query(s string) (*engine.SearchResults, error)
-	PrepareQuery(s string) string
+	PrepareQuery(s string, p uint32) []byte
 	Address() string
 }
 
@@ -29,17 +33,21 @@ func NewTCPClient(ip string, port string, network string) *TCPClient {
 	}
 }
 
-func (c *TCPClient) PrepareQuery(s string) string {
-	return fmt.Sprintf("QUERY %s", s)
+func (c *TCPClient) PrepareQuery(s string, p uint32) []byte {
+	query := make([]byte, 0)
+	query = append(query, GetHeader(QUERY)...)
+	query = append(query, Uint32ToBytes(p)...)
+	query = append(query, []byte(s)...)
+	return query
 }
 
 func (c *TCPClient) Address() string {
 	return fmt.Sprintf("%s:%s", c.Ip, c.Port)
 }
 
-func (c *TCPClient) Query(s string) (*engine.SearchResults, error) {
+func (c *TCPClient) Query(s string, page uint32) (*engine.SearchResults, error) {
 
-	query := c.PrepareQuery(s)
+	query := c.PrepareQuery(s, page)
 	address := c.Address()
 
 	tcpAddr, err := net.ResolveTCPAddr(c.Network, address)
@@ -52,7 +60,7 @@ func (c *TCPClient) Query(s string) (*engine.SearchResults, error) {
 		return nil, err
 	}
 
-	_, err = conn.Write([]byte(query))
+	_, err = conn.Write(query)
 	if err != nil {
 		return nil, err
 	}

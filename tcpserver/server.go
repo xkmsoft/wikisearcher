@@ -1,6 +1,7 @@
 package tcpserver
 
 import (
+	"errors"
 	"fmt"
 	"github.com/xkmsoft/wikisearcher/engine"
 	"net"
@@ -9,6 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	QUERY = byte(0)
 )
 
 const (
@@ -29,6 +34,7 @@ type ServerInterface interface {
 	InitializeServer() error
 	HandleRequest(connection net.Conn)
 	HandleResponse(response string, connection net.Conn)
+	ParseQuery(query []byte) (*QueryStruct, error)
 	AcceptConnections() error
 	GetAbstractStruct() *AbstractStruct
 	InitializeDataDirectory() error
@@ -51,6 +57,12 @@ type Server struct {
 	Abstracts  []*AbstractStruct
 	FileIndex  int
 	CleanFlag  bool
+}
+
+type QueryStruct struct {
+	command byte
+	page uint32
+	phrase string
 }
 
 func NewServer(host string, port string, network string, index int, clean bool) (*Server, error) {
@@ -197,30 +209,47 @@ func (s *Server) HandleRequest(connection net.Conn) {
 	buffer := make([]byte, 1024)
 	length, err := connection.Read(buffer)
 	if err != nil {
-		fmt.Printf("Error reading the connection: %s\n", err.Error())
+		s.HandleResponse(fmt.Sprintf("Error reading connection: %s\n", err.Error()), connection)
 		return
 	}
 
-	request := string(buffer[:length])
-	remote := connection.RemoteAddr().String()
-
-	fmt.Printf("Connection from address: %s\n", remote)
-	fmt.Printf("Received command: %s\n", request)
-
-	if strings.HasPrefix(request, "QUERY") {
-		query := strings.TrimSpace(strings.TrimPrefix(request, "QUERY"))
-		results := s.Indexer.Search(query)
-		str, err := SearchResultsToJSONString(results)
-		if err != nil {
-			s.HandleResponse(err.Error(), connection)
-		}
-		s.HandleResponse(str, connection)
-	} else if strings.HasPrefix(request, "QUIT") {
-		s.QuitSignal = true
-		s.HandleResponse("GOOD BYE", connection)
-	} else {
-		s.HandleResponse(fmt.Sprintf("UNKNOWN COMMAND: %s\n", request), connection)
+	request := buffer[:length]
+	queryStruct, err := s.ParseQuery(request)
+	if err != nil {
+		s.HandleResponse(fmt.Sprintf("Error: %s\n", err.Error()), connection)
+		return
 	}
+
+	fmt.Printf("Command: %b Page: %d Phrase: %s\n", queryStruct.command, queryStruct.page, queryStruct.phrase)
+
+	query := strings.TrimSpace(queryStruct.phrase)
+	results := s.Indexer.Search(query, queryStruct.page)
+	str, err := SearchResultsToJSONString(results)
+	if err != nil {
+		s.HandleResponse(err.Error(), connection)
+		return
+	}
+	s.HandleResponse(str, connection)
+}
+
+func (s *Server) ParseQuery(query []byte) (*QueryStruct, error) {
+	if len(query) < 5 {
+		return nil, errors.New(fmt.Sprintf("invalid length: %d it should be at least 5 bytes", len(query)))
+	}
+	command := query[0]
+	if command != QUERY {
+		return nil, errors.New(fmt.Sprintf("invalid header byte %b for query command", command))
+	}
+	pageBytes := query[1:5]
+	page := BytesToUint32(pageBytes)
+
+	phrase := string(query[5:])
+
+	return &QueryStruct{
+		command: command,
+		page:    page,
+		phrase:  phrase,
+	}, nil
 }
 
 func (s *Server) HandleResponse(response string, connection net.Conn) {
