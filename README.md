@@ -121,4 +121,3 @@ and we can perform full text search over the engine easily.
 - Sample screenshot (Searching over 633K documents in 0.18 milliseconds!)
 
 ![screenshot](https://github.com/xkmsoft/wikisearcher/blob/master/images/frontend.png)
-Format: ![screenshot](https://github.com/xkmsoft/wikisearcher/blob/master/images/frontend.png)
