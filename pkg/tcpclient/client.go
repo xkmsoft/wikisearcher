@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/xkmsoft/wikisearcher/engine"
+	"github.com/xkmsoft/wikisearcher/pkg/engine"
 	"io"
 	"net"
 )

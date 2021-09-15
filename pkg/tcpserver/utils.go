@@ -3,7 +3,7 @@ package tcpserver
 import (
 	"encoding/binary"
 	"encoding/json"
-	"github.com/xkmsoft/wikisearcher/engine"
+	"github.com/xkmsoft/wikisearcher/pkg/engine"
 )
 
 func SearchResultsToJSONString(results engine.SearchResults) (string, error) {

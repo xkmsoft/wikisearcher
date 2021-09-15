@@ -78,21 +78,17 @@ type Indexer struct {
 	Multiplier int
 }
 
-func NewIndexer() (*Indexer, error) {
-	filterer, err := NewFilterer()
-	if err != nil {
-		return nil, err
-	}
+func NewIndexer() *Indexer {
 	return &Indexer{
 		Data:       map[uint32]WikiXMLDoc{},
 		Indexes:    map[string]*roaring.Bitmap{},
 		Tokenizer:  NewTokenizer(),
-		Filterer:   filterer,
+		Filterer:   NewFilterer(),
 		Stemmer:    NewStemmer(),
 		Mutex:      sync.Mutex{},
 		Cores:      runtime.NumCPU(),
 		Multiplier: 2,
-	}, nil
+	}
 }
 
 func (i *Indexer) LoadWikimediaDump(path string, save bool, indexPath string, dataPath string) error {

@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/RoaringBitmap/roaring v0.9.4
+	github.com/gorilla/mux v1.8.0
 	github.com/kljensen/snowball v0.6.0
 	github.com/tamerh/xml-stream-parser v1.4.0
 )

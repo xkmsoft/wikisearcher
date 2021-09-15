@@ -3,7 +3,7 @@ package tcpserver
 import (
 	"errors"
 	"fmt"
-	"github.com/xkmsoft/wikisearcher/engine"
+	"github.com/xkmsoft/wikisearcher/pkg/engine"
 	"net"
 	"os"
 	"path/filepath"
@@ -65,11 +65,7 @@ type QueryStruct struct {
 	phrase string
 }
 
-func NewServer(host string, port string, network string, index int, clean bool) (*Server, error) {
-	db, err := engine.NewIndexer()
-	if err != nil {
-		return nil, err
-	}
+func NewServer(host string, port string, network string, index int, clean bool) *Server {
 	abstracts := make([]*AbstractStruct, AbstractFilesCount)
 	for i := 0; i < AbstractFilesCount; i++ {
 		var index string
@@ -90,12 +86,12 @@ func NewServer(host string, port string, network string, index int, clean bool) 
 		Host:       host,
 		Port:       port,
 		Network:    network,
-		Indexer:    db,
+		Indexer:    engine.NewIndexer(),
 		QuitSignal: false,
 		Abstracts:  abstracts,
 		FileIndex:  index,
 		CleanFlag:  clean,
-	}, nil
+	}
 }
 
 func (s *Server) InitializeDataDirectory() error {
