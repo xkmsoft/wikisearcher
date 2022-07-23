@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/xkmsoft/wikisearcher/pkg/apiserver"
 	"log"
 	"net/http"
+
+	"github.com/gorilla/mux"
+	"github.com/xkmsoft/wikisearcher/pkg/apiserver"
 )
 
 func main() {

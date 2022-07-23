@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/xkmsoft/wikisearcher/pkg/engine"
 	"io"
 	"net"
+
+	"github.com/xkmsoft/wikisearcher/pkg/engine"
 )
 
 const (

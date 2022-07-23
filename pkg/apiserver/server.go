@@ -4,10 +4,11 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"github.com/xkmsoft/wikisearcher/pkg/tcpclient"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/xkmsoft/wikisearcher/pkg/tcpclient"
 )
 
 const (

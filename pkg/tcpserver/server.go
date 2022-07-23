@@ -3,13 +3,14 @@ package tcpserver
 import (
 	"errors"
 	"fmt"
-	"github.com/xkmsoft/wikisearcher/pkg/engine"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/xkmsoft/wikisearcher/pkg/engine"
 )
 
 const (
@@ -26,7 +27,6 @@ const (
 	GZExtension        = "xml.gz"
 	AbstractFilesCount = 28
 )
-
 
 type ServerInterface interface {
 	Address() string
@@ -61,8 +61,8 @@ type Server struct {
 
 type QueryStruct struct {
 	command byte
-	page uint32
-	phrase string
+	page    uint32
+	phrase  string
 }
 
 func NewServer(host string, port string, network string, index int, clean bool) *Server {

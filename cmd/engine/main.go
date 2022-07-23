@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
-	"github.com/xkmsoft/wikisearcher/pkg/tcpserver"
 	"log"
 	"strings"
+
+	"github.com/xkmsoft/wikisearcher/pkg/tcpserver"
 )
 
 func GetAllowedNetworks(networks map[string]string) string {

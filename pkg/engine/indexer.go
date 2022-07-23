@@ -5,8 +5,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"github.com/RoaringBitmap/roaring"
-	"github.com/tamerh/xml-stream-parser"
 	"io"
 	"io/ioutil"
 	"math"
@@ -17,6 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/RoaringBitmap/roaring"
+	"github.com/tamerh/xml-stream-parser"
 )
 
 const (
